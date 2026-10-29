@@ -6,6 +6,7 @@
  * NOT responsible for: scenario actions, scoring, or drawing the map itself.
  */
 
+import { memo } from 'react'
 import { formatKg, formatTemp } from '../format'
 
 const STATUS_ORDER = { AT_RISK: 0, REROUTED: 1, OK: 2, DELIVERED: 3 }
@@ -17,7 +18,7 @@ const STATUS_TEXT = {
   DELIVERED: 'delivered',
 }
 
-export default function FleetRibbon({ vehicles, alerts, selectedVehicleId, onSelect }) {
+function FleetRibbon({ vehicles, alerts, selectedVehicleId, onSelect }) {
   const openAlerts = new Set(
     alerts.filter((alert) => !alert.resolved).map((alert) => alert.vehicle_id),
   )
@@ -72,3 +73,5 @@ export default function FleetRibbon({ vehicles, alerts, selectedVehicleId, onSel
     </div>
   )
 }
+
+export default memo(FleetRibbon)

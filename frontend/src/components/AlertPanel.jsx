@@ -6,6 +6,7 @@
  * NOT responsible for: raising alerts or computing recommendations.
  */
 
+import { useMemo } from 'react'
 import { formatHours, formatTemp, formatTime } from '../format'
 
 /** Turn a vehicle's trip ETA and remaining shelf life into a runway bar model. */
@@ -30,7 +31,10 @@ function runwayFor(vehicle) {
 }
 
 export default function AlertPanel({ state, onFocus }) {
-  const active = state.alerts.filter((alert) => !alert.resolved).reverse()
+  const active = useMemo(
+    () => state.alerts.filter((alert) => !alert.resolved).reverse(),
+    [state.alerts],
+  )
 
   return (
     <section className="panel">

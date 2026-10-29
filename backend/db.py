@@ -60,12 +60,22 @@ CREATE TABLE IF NOT EXISTS rescues (
 );
 
 CREATE INDEX IF NOT EXISTS idx_audit_run ON audit_events(run_id);
+CREATE INDEX IF NOT EXISTS idx_audit_vehicle ON audit_events(vehicle_id);
+CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_events(timestamp);
+CREATE INDEX IF NOT EXISTS idx_audit_event ON audit_events(event);
 CREATE INDEX IF NOT EXISTS idx_rescues_run ON rescues(run_id);
+CREATE INDEX IF NOT EXISTS idx_rescues_vehicle ON rescues(vehicle_id);
+CREATE INDEX IF NOT EXISTS idx_rescues_timestamp ON rescues(timestamp);
 """
 
 _connection: sqlite3.Connection | None = None
 _lock = threading.RLock()
 _last_error: str | None = None
+
+# --- Analytics cache (short TTL, invalidated on writes) -----------------------
+_analytics_cache: dict | None = None
+_analytics_cache_time: float = 0.0
+_ANALYTICS_CACHE_TTL = 2.0  # seconds; matches the simulator tick interval
 
 
 def _now() -> str:
@@ -122,12 +132,15 @@ def start_run(label: str = "demo") -> int | None:
 
 
 def _start_run(label: str) -> int:
+    global _cached_run_id
     connection = _connect()
     with _lock, connection:
         cursor = connection.execute(
             "INSERT INTO runs (started_at, label) VALUES (?, ?)", (_now(), label)
         )
-    return int(cursor.lastrowid)
+    _cached_run_id = int(cursor.lastrowid)
+    _invalidate_analytics_cache()
+    return _cached_run_id
 
 
 def current_run_id() -> int | None:
@@ -135,13 +148,22 @@ def current_run_id() -> int | None:
     return _guard(_current_run_id)
 
 
+_cached_run_id: int | None = None
+
+
 def _current_run_id() -> int:
+    global _cached_run_id
+    if _cached_run_id is not None:
+        return _cached_run_id
     connection = _connect()
     with _lock:
         row = connection.execute("SELECT id FROM runs ORDER BY id DESC LIMIT 1").fetchone()
     if row:
-        return int(row["id"])
-    return _start_run("demo")
+        _cached_run_id = int(row["id"])
+        return _cached_run_id
+    result = _start_run("demo")
+    _cached_run_id = result
+    return result
 
 
 def log_audit(entry: dict, run_id: int | None = None) -> None:
@@ -169,6 +191,7 @@ def _log_audit(entry: dict, run_id: int | None) -> None:
                 entry.get("details", ""),
             ),
         )
+    _invalidate_analytics_cache()
 
 
 def log_rescue(
@@ -243,6 +266,7 @@ def _log_rescue(
                 ",".join(f"{float(stop_kg):.1f}" for stop_kg in facility_kg),
             ),
         )
+    _invalidate_analytics_cache()
 
 
 def _split_types(value: str) -> list[str]:
@@ -257,9 +281,25 @@ def _split_kg(value: str) -> list[float]:
         return []
 
 
+def _invalidate_analytics_cache() -> None:
+    """Clear the analytics cache so the next call recomputes."""
+    global _analytics_cache, _analytics_cache_time
+    _analytics_cache = None
+    _analytics_cache_time = 0.0
+
+
 def analytics(recent_limit: int = 5) -> dict:
     """Aggregate every run, plus the current run and the most recent rescues."""
-    return _guard(_analytics, recent_limit) or {}
+    global _analytics_cache, _analytics_cache_time
+    import time as _time
+    now = _time.monotonic()
+    if _analytics_cache is not None and (now - _analytics_cache_time) < _ANALYTICS_CACHE_TTL:
+        return dict(_analytics_cache)
+    result = _guard(_analytics, recent_limit)
+    if result:
+        _analytics_cache = result
+        _analytics_cache_time = _time.monotonic()
+    return result or {}
 
 
 def _analytics(recent_limit: int) -> dict:

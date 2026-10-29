@@ -4,11 +4,11 @@
  * NOT responsible for: creating notifications or deciding who receives them.
  */
 
+import { useMemo } from 'react'
 import { formatTime } from '../format'
 
 export default function NotificationFeed({ state }) {
-  const items = [...state.notifications].reverse()
-
+  const items = useMemo(() => [...state.notifications].reverse(), [state.notifications])
   return (
     <section className="panel">
       <div className="panel-head">

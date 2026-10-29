@@ -6,9 +6,10 @@
  * or cross-run history (AnalyticsPanel reads the SQLite ledger).
  */
 
+import { memo } from 'react'
 import { formatInr, formatNumber } from '../format'
 
-export default function ImpactCounters({ impact, rates }) {
+function ImpactCounters({ impact, rates }) {
   const cards = [
     { key: 'kg_rescued', label: 'Produce rescued', unit: 'kg', value: formatNumber(impact.kg_rescued) },
     { key: 'meals_saved', label: 'Meals saved', unit: 'meals', value: formatNumber(impact.meals_saved) },
@@ -56,3 +57,5 @@ export default function ImpactCounters({ impact, rates }) {
     </section>
   )
 }
+
+export default memo(ImpactCounters)

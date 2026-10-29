@@ -5,11 +5,11 @@
  * NOT responsible for: simulation, matching, map internals or panel rendering.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import useLiveState from './hooks/useLiveState'
 import { resetDemo, triggerScenario, acceptTransfer } from './api'
 import { formatInr } from './format'
-import MapView from './components/MapView'
+const MapView = lazy(() => import('./components/MapView'))
 import FleetRibbon from './components/FleetRibbon'
 import DemoControls from './components/DemoControls'
 import AlertPanel from './components/AlertPanel'
@@ -37,8 +37,10 @@ export default function App() {
 
   useEffect(() => () => clearTimeout(toastTimer.current), [])
 
-  const selectedVehicle =
-    state?.vehicles.find((vehicle) => vehicle.id === selectedVehicleId) || null
+  const selectedVehicle = useMemo(
+    () => state?.vehicles.find((vehicle) => vehicle.id === selectedVehicleId) || null,
+    [state, selectedVehicleId],
+  )
 
   const focusVehicle = (vehicleId) => {
     setSelectedVehicleId(vehicleId)
@@ -144,7 +146,10 @@ export default function App() {
     )
   }
 
-  const activeAlertCount = state.alerts.filter((alert) => !alert.resolved).length
+  const activeAlertCount = useMemo(
+    () => state.alerts.filter((alert) => !alert.resolved).length,
+    [state.alerts],
+  )
 
   return (
     <div className="app">
@@ -181,12 +186,14 @@ export default function App() {
             selectedVehicleId={selectedVehicleId}
             onSelect={focusVehicle}
           />
-          <MapView
-            state={state}
-            selectedVehicleId={selectedVehicleId}
-            focusSignal={focusSignal}
-            onSelect={setSelectedVehicleId}
-          />
+          <Suspense fallback={<div className="map-loading">Loading map…</div>}>
+            <MapView
+              state={state}
+              selectedVehicleId={selectedVehicleId}
+              focusSignal={focusSignal}
+              onSelect={setSelectedVehicleId}
+            />
+          </Suspense>
         </div>
 
         <aside className="side-pane">

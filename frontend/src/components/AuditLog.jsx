@@ -6,6 +6,7 @@
  * or aggregating history (AnalyticsPanel does that).
  */
 
+import { useMemo } from 'react'
 import { formatTime } from '../format'
 
 const EVENT_LABEL = {
@@ -20,8 +21,7 @@ const EVENT_LABEL = {
 }
 
 export default function AuditLog({ state }) {
-  const entries = [...state.audit_log].reverse()
-
+  const entries = useMemo(() => [...state.audit_log].reverse(), [state.audit_log])
   return (
     <details className="panel audit-panel">
       <summary>
