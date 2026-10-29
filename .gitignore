@@ -1,0 +1,21 @@
+# FreshRoute ignore list. Keeps the repo clean: no environment, no build output,
+# no demo ledger. The SQLite file is created locally on first run.
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+frontend/node_modules/
+frontend/dist/
+backend/data/*.db
+backend/data/*.db-journal
+*.log
+.DS_Store
+
+# Presentation artifacts are kept local by choice (repo is code + docs).
+deck/
+*.pptx
+*.pdf
+
+# Local build log, not part of the published repo.
+prompts.txt
+

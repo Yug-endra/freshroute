@@ -1,0 +1,7 @@
+# Line-ending policy for the published repo. Keeps the tree LF even though the
+# demo runs on Windows; nothing here changes how the app behaves locally.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.db binary

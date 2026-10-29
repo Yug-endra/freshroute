@@ -1,0 +1,119 @@
+{
+  "_header": "FreshRoute seed vehicles. Responsible for: six simulated produce trucks around Bengaluru. NOT responsible for: live GPS, sensor data or route geometry (see routes.json).",
+  "vehicles": [
+    {
+      "id": "V1",
+      "name": "KA-01 Reefer 1",
+      "produce": "tomato",
+      "produce_class": "fast",
+      "load_kg": 1800,
+      "temp_c": 5.2,
+      "shelf_life_h": 9,
+      "speed_kmph": 40,
+      "route_id": "R1",
+      "destination_id": "F1",
+      "position": [
+        13.98,
+        77.85
+      ],
+      "status": "OK",
+      "baseline_temp_c": 5.2,
+      "cruise_kmph": 40
+    },
+    {
+      "id": "V2",
+      "name": "KA-02 Reefer 2",
+      "produce": "leafy greens",
+      "produce_class": "fast",
+      "load_kg": 950,
+      "temp_c": 4.6,
+      "shelf_life_h": 7,
+      "speed_kmph": 40,
+      "route_id": "R2",
+      "destination_id": "F4",
+      "position": [
+        13.35,
+        78.4
+      ],
+      "status": "OK",
+      "baseline_temp_c": 4.6,
+      "cruise_kmph": 40
+    },
+    {
+      "id": "V3",
+      "name": "KA-03 Reefer 3",
+      "produce": "banana",
+      "produce_class": "stable",
+      "load_kg": 2200,
+      "temp_c": 5.5,
+      "shelf_life_h": 11,
+      "speed_kmph": 40,
+      "route_id": "R3",
+      "destination_id": "F10",
+      "position": [
+        12.45,
+        76.85
+      ],
+      "status": "OK",
+      "baseline_temp_c": 5.5,
+      "cruise_kmph": 40
+    },
+    {
+      "id": "V4",
+      "name": "KA-04 Reefer 4",
+      "produce": "onion",
+      "produce_class": "stable",
+      "load_kg": 2500,
+      "temp_c": 5.8,
+      "shelf_life_h": 12,
+      "speed_kmph": 40,
+      "route_id": "R4",
+      "destination_id": "F3",
+      "position": [
+        13.55,
+        76.95
+      ],
+      "status": "OK",
+      "baseline_temp_c": 5.8,
+      "cruise_kmph": 40
+    },
+    {
+      "id": "V5",
+      "name": "KA-05 Reefer 5",
+      "produce": "tomato",
+      "produce_class": "fast",
+      "load_kg": 1600,
+      "temp_c": 5.0,
+      "shelf_life_h": 8,
+      "speed_kmph": 40,
+      "route_id": "R5",
+      "destination_id": "F6",
+      "position": [
+        12.35,
+        78.4
+      ],
+      "status": "OK",
+      "baseline_temp_c": 5.0,
+      "cruise_kmph": 40
+    },
+    {
+      "id": "V6",
+      "name": "KA-06 Reefer 6",
+      "produce": "leafy greens",
+      "produce_class": "fast",
+      "load_kg": 800,
+      "temp_c": 4.8,
+      "shelf_life_h": 6,
+      "speed_kmph": 40,
+      "route_id": "R6",
+      "destination_id": "F7",
+      "position": [
+        13.05,
+        76.78
+      ],
+      "status": "OK",
+      "baseline_temp_c": 4.8,
+      "cruise_kmph": 40
+    }
+  ]
+}

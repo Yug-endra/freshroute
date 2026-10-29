@@ -1,0 +1,95 @@
+{
+  "_header": "FreshRoute seed facilities. Responsible for: ten nearby cold storages, community kitchens and shelters with capacity and contact details. NOT responsible for: live inventory or sensor data — free_kg is simulated.",
+  "facilities": [
+    {
+      "id": "F1",
+      "name": "Yeshwanthpur Cold Chain Hub",
+      "type": "cold_storage",
+      "position": [13.0235, 77.551],
+      "capacity_kg": 8000,
+      "free_kg": 6200,
+      "contact": "+91 80 4123 7788"
+    },
+    {
+      "id": "F2",
+      "name": "Hebbal Agro Cold Storage",
+      "type": "cold_storage",
+      "position": [13.035, 77.5912],
+      "capacity_kg": 5000,
+      "free_kg": 450,
+      "contact": "+91 80 2354 1102"
+    },
+    {
+      "id": "F3",
+      "name": "Whitefield Fresh Storage",
+      "type": "cold_storage",
+      "position": [12.9698, 77.75],
+      "capacity_kg": 6000,
+      "free_kg": 3100,
+      "contact": "+91 80 2845 6621"
+    },
+    {
+      "id": "F4",
+      "name": "Annapurna Community Kitchen",
+      "type": "kitchen",
+      "position": [12.9352, 77.6245],
+      "capacity_kg": 2500,
+      "free_kg": 1800,
+      "contact": "+91 80 2663 4410"
+    },
+    {
+      "id": "F5",
+      "name": "Akshaya Patra Kitchen, Rajajinagar",
+      "type": "kitchen",
+      "position": [12.9915, 77.5524],
+      "capacity_kg": 4000,
+      "free_kg": 900,
+      "contact": "+91 80 3010 2200"
+    },
+    {
+      "id": "F6",
+      "name": "Roti Ghar Kitchen, Indiranagar",
+      "type": "kitchen",
+      "position": [12.9784, 77.6408],
+      "capacity_kg": 1500,
+      "free_kg": 1200,
+      "contact": "+91 80 2521 9087"
+    },
+    {
+      "id": "F7",
+      "name": "Sneha Food Shelter, Shivajinagar",
+      "type": "shelter",
+      "position": [12.985, 77.605],
+      "capacity_kg": 1200,
+      "free_kg": 800,
+      "contact": "+91 98860 44127"
+    },
+    {
+      "id": "F8",
+      "name": "Hope Foundation Shelter, KR Market",
+      "type": "shelter",
+      "position": [12.955, 77.575],
+      "capacity_kg": 1000,
+      "free_kg": 350,
+      "contact": "+91 98800 77321"
+    },
+    {
+      "id": "F9",
+      "name": "Umeed Relief Shelter, Bellandur",
+      "type": "shelter",
+      "position": [12.93, 77.678],
+      "capacity_kg": 900,
+      "free_kg": 700,
+      "contact": "+91 97400 11862"
+    },
+    {
+      "id": "F10",
+      "name": "Electronic City Cold Store",
+      "type": "cold_storage",
+      "position": [12.845, 77.66],
+      "capacity_kg": 7000,
+      "free_kg": 5400,
+      "contact": "+91 80 2852 3390"
+    }
+  ]
+}
