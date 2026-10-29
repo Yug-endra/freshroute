@@ -78,7 +78,7 @@ def _load_json(filename: str) -> dict:
         return json.load(handle)
 
 
-def reset_state() -> None:
+def reset_state(label: str = "demo") -> None:
     """
     Reload the JSON seed files and clear every log, counter and scenario.
     This is what POST /reset calls, so the demo always starts from the same place.
@@ -133,7 +133,7 @@ def reset_state() -> None:
 
     # Keep history in SQLite: a reset starts a fresh demo run but never deletes
     # the ledger, so the analytics panel can show every run of the day.
-    db.start_run()
+    db.start_run(label)
 
 
 def sim_clock() -> str:
@@ -200,7 +200,7 @@ def add_notification(facility_id: str, message: str, vehicle_id: str | None = No
 def record_rescue(
     kg: float,
     vehicle_id: str | None = None,
-    facilities: list[Facility] | None = None,
+    allocations: list[tuple[Facility, float]] | None = None,
 ) -> None:
     """
     Update every impact counter after a successful dispatch and write one row to
@@ -208,6 +208,8 @@ def record_rescue(
 
     Kilograms are the only measured value; meals, rupee value and CO2e are
     derived from the assumptions above and labelled "estimated" in the UI.
+    `allocations` pairs each receiving facility with the kilograms it takes, so a
+    two-stop rescue is credited to both receivers without double-counting.
     """
     rescued_meals = round(kg * MEALS_PER_KG)
     rescued_value = round(kg * VALUE_INR_PER_KG)
@@ -219,7 +221,7 @@ def record_rescue(
     impact["value_inr"] = round(impact["kg_rescued"] * VALUE_INR_PER_KG)
     impact["co2e_kg_avoided"] = round(impact["kg_rescued"] * CO2E_KG_PER_KG, 1)
 
-    receivers = facilities or []
+    stops = allocations or []
     db.log_rescue(
         run_id=db.current_run_id(),
         timestamp=_now(),
@@ -229,9 +231,10 @@ def record_rescue(
         meals=rescued_meals,
         value_inr=rescued_value,
         co2e_kg=rescued_co2e,
-        facility_ids=[facility.id for facility in receivers],
-        facility_names=[facility.name for facility in receivers],
-        facility_types=[facility.type for facility in receivers],
+        facility_ids=[facility.id for facility, _kg in stops],
+        facility_names=[facility.name for facility, _kg in stops],
+        facility_types=[facility.type for facility, _kg in stops],
+        facility_kg=[stop_kg for _facility, stop_kg in stops],
     )
 
 
@@ -240,3 +243,86 @@ def resolve_alert(vehicle_id: str) -> None:
     alert = active_alerts.pop(vehicle_id, None)
     if alert:
         alert.resolved = True
+
+
+def transfer_load(
+    broken_vehicle_id: str,
+    candidate_vehicle_id: str,
+    facility_id: str,
+) -> dict:
+    """
+    Execute a truck-to-truck load transfer.
+
+    The candidate truck drives to the broken truck's position, picks up the
+    cargo, and continues to the receiving facility. The broken truck is left
+    empty and back in OK status. Impact counters are updated with the rescued
+    kilograms and one rescue row is written to SQLite.
+    """
+    broken = vehicles.get(broken_vehicle_id)
+    candidate = vehicles.get(candidate_vehicle_id)
+    facility = facilities.get(facility_id)
+    if not broken or not candidate or not facility:
+        return {"ok": False, "detail": "Vehicle or facility not found"}
+
+    if candidate.status != "OK":
+        return {"ok": False, "detail": f"{candidate.name} is not available for transfer"}
+
+    load = broken.load_kg
+    if load <= 0:
+        return {"ok": False, "detail": f"{broken.name} has no load to transfer"}
+
+    # The candidate reroutes: its current position → broken truck's position → facility.
+    destinations = [list(broken.position), list(facility.position)]
+    candidate.new_route = matcher.build_rescue_route(list(candidate.position), destinations)
+    candidate.destination_id = facility.id
+    candidate.reroute_stops = [facility.id]
+    candidate.rerouted_to = facility.id
+    candidate.status = "REROUTED"
+    candidate.speed_kmph = candidate.cruise_kmph
+    state.progress_km[candidate.id] = 0.0
+    length = matcher.route_length_km(candidate.new_route)
+    candidate.distance_remaining_km = round(length, 2)
+    candidate.eta_hours = round(length / candidate.speed_kmph, 2) if candidate.speed_kmph > 0 else 999.0
+
+    # Clear the broken truck: load transferred away, back to OK.
+    broken.load_kg = 0.0
+    broken.status = "OK"
+    broken.new_route = None
+    broken.distance_remaining_km = 0.0
+    broken.eta_hours = 0.0
+    broken.sim_flags = {
+        "reefer_failure": False,
+        "delay": False,
+        "breakdown": False,
+    }
+    if broken.id in active_alerts:
+        resolve_alert(broken.id)
+
+    # Notify the receiving facility.
+    eta = matcher.eta_hours(candidate, facility)
+    add_notification(
+        facility.id,
+        f"Incoming {load:.0f} kg {broken.produce} (transferred from {broken.name} via {candidate.name}), ETA {eta:.1f} h.",
+        candidate.id,
+    )
+
+    # Record the rescue and impact.
+    add_audit(
+        "TRANSFER",
+        f"{candidate.name}: {load:.0f} kg {broken.produce} transferred from {broken.name} at {broken.position}, delivered to {facility.name}.",
+        candidate.id,
+    )
+    record_rescue(
+        load,
+        vehicle_id=candidate.id,
+        allocations=[(facility, load)],
+    )
+
+    return {
+        "ok": True,
+        "candidate_id": candidate.id,
+        "broken_id": broken.id,
+        "facility_id": facility.id,
+        "kg_rescued": load,
+        "impact": dict(impact),
+    }

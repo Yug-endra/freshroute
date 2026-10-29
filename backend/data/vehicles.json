@@ -63,7 +63,7 @@
       "name": "KA-04 Reefer 4",
       "produce": "onion",
       "produce_class": "stable",
-      "load_kg": 2500,
+      "load_kg": 6500,
       "temp_c": 5.8,
       "shelf_life_h": 12,
       "speed_kmph": 40,

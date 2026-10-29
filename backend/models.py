@@ -44,6 +44,8 @@ class Vehicle(BaseModel):
     new_route: list[list[float]] | None = None
     original_destination_id: str | None = None
     rerouted_to: str | None = None
+    # Every receiving facility in stop order. A split rescue has two entries.
+    reroute_stops: list[str] = Field(default_factory=list)
 
 
 class Facility(BaseModel):
@@ -89,6 +91,7 @@ class Recommendation(BaseModel):
     total_score: float
     components: ScoreComponents
     why: str
+    spare_hours: float = 0.0   # hours of shelf life remaining after the trip
 
 
 class SplitStop(Recommendation):
@@ -117,16 +120,44 @@ class NearestOption(BaseModel):
     eta_hours: float
     feasible: bool
     reason: str
+    # Score of the nearest facility (only populated when feasible and a chosen
+    # facility exists). Lets the UI render a counterfactual comparison card.
+    total_score: float | None = None
+    components: ScoreComponents | None = None
+
+
+class TransferOption(BaseModel):
+    """
+    A nearby healthy truck that can drive to the broken truck's location,
+    pick up its load, and deliver it to the nearest feasible facility.
+    """
+
+    vehicle_id: str
+    vehicle_name: str
+    distance_to_broken_km: float
+    load_kg: float
+    target_facility_id: str
+    target_facility_name: str
+    distance_to_facility_km: float
+    total_eta_hours: float
+    why: str
 
 
 class RecommendationResponse(BaseModel):
-    """What GET /recommend/{vehicle_id} returns: one ranked list or a split plan."""
+    """What GET /recommend/{vehicle_id} returns: one ranked list, a split plan,
+    or a 'none' mode when no facility can take the load in time."""
 
     vehicle_id: str
-    mode: Literal["single", "split"]
+    mode: Literal["single", "split", "none"]
     recommendations: list[Recommendation]
     split_plan: SplitPlan | None = None
     nearest: NearestOption | None = None
+    # Plain-English explanation of why no rescue is possible, only set when
+    # mode == "none".
+    blocked_reason: str | None = None
+    # Nearby healthy trucks that can pick up the load by driving to the broken
+    # truck's location, only set when mode == "none".
+    transfer_options: list[TransferOption] | None = None
 
 
 class RerouteRequest(BaseModel):

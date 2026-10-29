@@ -146,6 +146,7 @@ frontend/
     components/AnalyticsPanel.jsx
     components/AuditLog.jsx
     components/DemoControls.jsx
+    components/FleetRibbon.jsx
 ARCHITECTURE.md    Feature → file/function map, persistence design and the 8-step data flow
 README.md          Setup, run, demo script, file-by-file responsibilities
 ```

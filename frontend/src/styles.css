@@ -1146,6 +1146,268 @@ summary:focus-visible {
   cursor: wait;
 }
 
+/* No-rescue-options panel — shown when no facility can take the load. */
+.blocked-panel {
+  border: 1px solid #f3cfc9;
+  border-radius: 10px;
+  background: #fdf0ee;
+  padding: 10px;
+  margin-top: 8px;
+}
+
+.blocked-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: #8f2f23;
+}
+
+.blocked-tag {
+  background: #fdecea;
+  color: #b03a2e;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 9px;
+}
+
+.blocked-count {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.blocked-reason {
+  margin: 6px 0 8px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: #4a574d;
+}
+
+.blocked-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.blocked-actions .link-btn {
+  flex: 1;
+  text-align: center;
+  color: #8f2f23;
+}
+
+.blocked-hint {
+  margin: 0;
+  font-size: 9.5px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+/* Transfer option cards — nearby truck can pick up the load. */
+.transfer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.transfer-card {
+  border: 1px solid #e3ebe0;
+  border-radius: 9px;
+  background: #f4f8f2;
+  padding: 9px 10px;
+  margin-bottom: 4px;
+}
+
+.transfer-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: #405046;
+}
+
+.transfer-head strong {
+  color: #24352a;
+  font-size: 11px;
+}
+
+.transfer-eta {
+  background: #e5f7ec;
+  color: #157347;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.transfer-why {
+  margin: 5px 0 8px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: #4a574d;
+}
+
+.details-btn {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #ffffff;
+  color: #405046;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 6px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.details-btn:hover {
+  border-color: #9fc3a8;
+  background: #f1f8f2;
+}
+
+.score-details {
+  margin-top: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  background: #f7faf5;
+  border: 1px solid #e3ebe0;
+  font-size: 10px;
+}
+
+.score-details table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.score-details td {
+  padding: 3px 6px;
+  border-bottom: 1px dashed #e6ece3;
+  color: #4a574d;
+}
+
+.score-details td:first-child {
+  color: var(--muted);
+  width: 55%;
+}
+
+.score-details tr:last-child td {
+  border-bottom: none;
+}
+
+/* Counterfactual: nearest vs top pick comparison */
+.counterfactual-card {
+  margin-top: 9px;
+  border: 1px solid #cfe0d0;
+  border-radius: 9px;
+  background: #f7faf5;
+  padding: 8px 9px;
+}
+
+.counterfactual-head {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 7px;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.counterfactual-head strong {
+  color: #24352a;
+  display: block;
+  font-size: 11px;
+}
+
+.counterfactual-head .score-total {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--green);
+}
+
+.counterfactual-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.counterfactual-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 9.5px;
+  color: #4a574d;
+  padding: 3px 0;
+  border-bottom: 1px dashed #e6ece3;
+}
+
+.counterfactual-row:last-child {
+  border-bottom: none;
+}
+
+.counterfactual-label {
+  min-width: 130px;
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.counterfactual-nearest,
+.counterfactual-top {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  width: 55px;
+  text-align: right;
+}
+
+.counterfactual-nearest {
+  color: #6b7c70;
+}
+
+.counterfactual-top {
+  color: #173a28;
+}
+
+.counterfactual-winner {
+  font-size: 8.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.counterfactual-winner.top {
+  background: #e5f7ec;
+  color: #157347;
+}
+
+.counterfactual-winner.nearest {
+  background: #fdecea;
+  color: #b03a2e;
+}
+
+.counterfactual-winner.tie {
+  background: #eef3ec;
+  color: #55655a;
+}
+
+.counterfactual-why {
+  margin: 5px 0 0;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: #3c4a41;
+}
+
 .split-note {
   font-size: 10.5px;
   background: #fff7e6;
@@ -1338,6 +1600,11 @@ summary:focus-visible {
   border-bottom: none;
 }
 
+.ledger-list.run-history li.current {
+  background: #eefaf1;
+  border-left: 2px solid var(--green);
+}
+
 .ledger-time {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
@@ -1388,6 +1655,160 @@ summary:focus-visible {
   margin-top: 9px;
   padding: 6px;
   font-size: 9.5px;
+}
+
+/* ---------- Fleet ribbon ---------- */
+.fleet-ribbon {
+  position: sticky;
+  top: 64px;
+  z-index: 1100;
+  background: #f6f8f4;
+  border-bottom: 1px solid var(--line);
+  padding: 6px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fleet-ribbon-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.fleet-ribbon-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #405046;
+  font-weight: 700;
+}
+
+.fleet-ribbon-count {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.fleet-ribbon-count.danger {
+  color: #b03a2e;
+}
+
+.fleet-chips {
+  display: flex;
+  gap: 5px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+}
+
+.fleet-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.fleet-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 7px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #fbfcf9;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  flex: 0 0 auto;
+  transition: border-color 0.15s ease, transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.fleet-chip:hover:not(:disabled) {
+  border-color: #9fc3a8;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.fleet-chip.selected {
+  border-color: var(--green);
+  background: #eefaf1;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.2);
+}
+
+.fleet-chip.at_risk {
+  border-color: #fdecea;
+  background: #fffafa;
+}
+
+.fleet-chip.rerouted {
+  border-color: #e3f0fb;
+  background: #eef6fb;
+}
+
+.fleet-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.fleet-chip.ok .fleet-dot { background: #1f8a4c; }
+.fleet-chip.at_risk .fleet-dot { background: var(--red); box-shadow: 0 0 0 4px rgba(192,57,43,0.25); }
+.fleet-chip.rerouted .fleet-dot { background: var(--blue); }
+.fleet-chip.delivered .fleet-dot { background: #55655a; }
+
+.fleet-id { font-size: 9.5px; color: var(--muted); letter-spacing: 0.05em; }
+.fleet-chip.selected .fleet-id { color: #173a28; }
+
+.fleet-load {
+  margin-left: auto;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: #24352a;
+}
+
+.fleet-temp {
+  margin-left: 5px;
+  font-size: 9px;
+  color: var(--muted);
+}
+.fleet-temp.warm { color: #b03a2e; font-weight: 700; }
+
+.fleet-alert {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--red);
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  animation: alertBlip 1.2s infinite;
+}
+
+@keyframes alertBlip {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.12); opacity: 0.85; }
+}
+
+.fleet-hint {
+  font-size: 9px;
+  color: var(--muted);
+  text-align: right;
+  margin-top: 2px;
+}
+
+/* Make the map pane contain the ribbon stacked above the leaflet map */
+.map-pane {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Rescue route dashes drift toward the receiver. */

@@ -49,6 +49,18 @@ export function acceptReroute(vehicleId, facilityId, viaFacilityId = null) {
   })
 }
 
+export function acceptTransfer(brokenVehicleId, candidateVehicleId, facilityId) {
+  return request('/transfer-load', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({
+      broken_vehicle_id: brokenVehicleId,
+      candidate_vehicle_id: candidateVehicleId,
+      facility_id: facilityId,
+    }),
+  })
+}
+
 export function resetDemo() {
   return request('/reset', { method: 'POST' })
 }

@@ -23,9 +23,14 @@ from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnec
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from . import db, matcher, risk, simulator, state
-from .models import RecommendationResponse, RerouteRequest
+from .models import (
+    RecommendationResponse,
+    RerouteRequest,
+    TransferOption,
+)
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 
@@ -145,8 +150,15 @@ async def get_state():
 
 @app.get("/health")
 async def health():
-    """Tiny liveness probe used by hosting panels and smoke tests."""
-    return {"status": "ok", "tick": state.tick, "clients": len(_clients)}
+    """Liveness probe: tick, client count, sim clock and active alert count."""
+    active_alerts = sum(1 for a in state.alerts if not a.resolved)
+    return {
+        "status": "ok",
+        "tick": state.tick,
+        "clients": len(_clients),
+        "sim_clock": state.sim_clock(),
+        "active_alerts": active_alerts,
+    }
 
 
 @app.get("/analytics")
@@ -228,18 +240,67 @@ async def get_recommendations(vehicle_id: str):
     else:
         plan = matcher.split_plan(vehicle, facilities)
         if plan is None:
-            raise HTTPException(
-                status_code=400,
-                detail="No facility can take this load before its shelf life runs out",
+            # Diagnose why no rescue is possible so the dispatcher gets
+            # an actionable next step instead of a dead-end error.
+            too_far = [
+                f
+                for f in facilities
+                if matcher.eta_hours(vehicle, f) >= vehicle.shelf_life_h
+            ]
+            too_small = [
+                f
+                for f in facilities
+                if f.free_kg < vehicle.load_kg
+            ]
+            usable = [
+                f
+                for f in facilities
+                if f.free_kg > 0
+                and matcher.eta_hours(vehicle, f) < vehicle.shelf_life_h
+            ]
+            if len(usable) < 2:
+                blocked_reason = (
+                    f"Only {len(usable)} facility(ies) can take any of this "
+                    f"{vehicle.load_kg:.0f} kg load before its shelf life runs "
+                    f"out; a two-stop rescue needs at least two."
+                )
+            elif too_small and not too_far:
+                blocked_reason = (
+                    f"No single facility has enough free space for the "
+                    f"{vehicle.load_kg:.0f} kg load, and no two facilities "
+                    f"together can cover it before shelf life expires."
+                )
+            elif too_far and not too_small:
+                blocked_reason = (
+                    f"Facilities have space, but none can be reached before "
+                    f"the {vehicle.shelf_life_h:.1f} h shelf life expires."
+                )
+            else:
+                blocked_reason = (
+                    f"No facility can take this {vehicle.load_kg:.0f} kg load "
+                    f"before its shelf life runs out."
+                )
+            response = RecommendationResponse(
+                vehicle_id=vehicle_id,
+                mode="none",
+                recommendations=[],
+                split_plan=None,
+                nearest=matcher.nearest_option(vehicle, facilities),
+                blocked_reason=blocked_reason,
+                transfer_options=matcher.transfer_options(
+                    vehicle, list(state.vehicles.values()), facilities
+                ),
             )
-        response = RecommendationResponse(
-            vehicle_id=vehicle_id,
-            mode="split",
-            recommendations=[],
-            split_plan=plan,
-            nearest=matcher.nearest_option(vehicle, facilities, plan.stops[0]),
-        )
-        details = f"No single facility fits; two-stop plan proposed for {vehicle.name}."
+            details = f"No rescue options for {vehicle.name}: {blocked_reason}"
+        else:
+            response = RecommendationResponse(
+                vehicle_id=vehicle_id,
+                mode="split",
+                recommendations=[],
+                split_plan=plan,
+                nearest=matcher.nearest_option(vehicle, facilities, plan.stops[0]),
+            )
+            details = f"No single facility fits; two-stop plan proposed for {vehicle.name}."
 
     state.add_audit("RECOMMEND", details, vehicle_id)
     return response
@@ -348,7 +409,8 @@ async def reroute(body: RerouteRequest):
     # Redraw the route through the receiving facility (or both, for a split load).
     destinations = [target.position for target, _kg in allocations]
     vehicle.new_route = matcher.build_rescue_route(vehicle.position, destinations)
-    vehicle.destination_id = facility.id
+    vehicle.reroute_stops = [target.id for target, _kg in allocations]
+    vehicle.destination_id = allocations[-1][0].id  # the route ends at the last stop
     vehicle.rerouted_to = facility.id
     vehicle.status = "REROUTED"
     state.progress_km[vehicle.id] = 0.0
@@ -365,7 +427,7 @@ async def reroute(body: RerouteRequest):
     state.record_rescue(
         load,
         vehicle_id=vehicle.id,
-        facilities=[target for target, _kg in allocations],
+        allocations=allocations,
     )
     state.resolve_alert(vehicle.id)
 
@@ -379,11 +441,36 @@ async def reroute(body: RerouteRequest):
     }
 
 
+class TransferRequest(BaseModel):
+    """Body of POST /transfer-load."""
+
+    broken_vehicle_id: str
+    candidate_vehicle_id: str
+    facility_id: str
+
+
+@app.post("/transfer-load")
+async def transfer_load_endpoint(body: TransferRequest):
+    """
+    Truck-to-truck load transfer: a healthy truck drives to the broken truck's
+    position, picks up the cargo, and delivers it to the receiving facility.
+    """
+    result = state.transfer_load(
+        body.broken_vehicle_id,
+        body.candidate_vehicle_id,
+        body.facility_id,
+    )
+    if not result["ok"]:
+        raise HTTPException(status_code=400, detail=result["detail"])
+    await broadcast()
+    return result
+
+
 @app.post("/reset")
-async def reset():
+async def reset(label: str = Query("demo", description="Name shown in the analytics ledger for this run")):
     """Restore the exact seed state so the demo can be run again."""
-    state.reset_state()
-    state.add_audit("SYSTEM", "Demo reset to seed state.")
+    state.reset_state(label=label)
+    state.add_audit("SYSTEM", f"Demo reset to seed state (run: {label}).")
     await broadcast()
     return state.get_state()
 

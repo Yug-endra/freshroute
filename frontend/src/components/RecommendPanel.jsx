@@ -30,7 +30,13 @@ function ScoreBar({ label, value, tone }) {
   )
 }
 
-function RecommendationCard({ rec, rank, kgAllocated, onAccept, accepting, actionLabel, isNearest }) {
+function RecommendationCard({ rec, rank, kgAllocated, onAccept, accepting, actionLabel, isNearest, isTop }) {
+  const [detailsOpen, setDetailsOpen] = useState(false)
+
+  // spare_hours comes directly from the backend (hours of shelf life remaining
+  // after the trip). Fall back to 0 if the field is absent for safety.
+  const spareHours = Math.max(0, rec.spare_hours ?? 0)
+
   return (
     <article className={`recommendation-card ${rank === 1 ? 'top' : ''}`}>
       <div className="rec-head">
@@ -58,7 +64,7 @@ function RecommendationCard({ rec, rank, kgAllocated, onAccept, accepting, actio
         </span>
         <span>
           <small>Time buffer</small>
-          {Math.round(rec.components.time_margin * 100)}%
+          {spareHours.toFixed(1)} h
         </span>
         {kgAllocated != null && (
           <span>
@@ -83,8 +89,54 @@ function RecommendationCard({ rec, rank, kgAllocated, onAccept, accepting, actio
 
       <button
         type="button"
+        className="details-btn"
+        onClick={() => setDetailsOpen((open) => !open)}
+      >
+        {detailsOpen ? 'Hide score details' : 'Show score details'}
+      </button>
+
+      {detailsOpen && (
+        <div className="score-details">
+          <table>
+            <tbody>
+              <tr>
+                <td>Distance to facility</td>
+                <td>{rec.distance_km.toFixed(2)} km</td>
+              </tr>
+              <tr>
+                <td>ETA at rescue speed</td>
+                <td>{rec.eta_hours.toFixed(2)} h</td>
+              </tr>
+              <tr>
+                <td>Shelf-life buffer</td>
+                <td>{spareHours.toFixed(1)} h</td>
+              </tr>
+              <tr>
+                <td>Proximity score</td>
+                <td>{(rec.components.proximity * 100).toFixed(1)}%</td>
+              </tr>
+              <tr>
+                <td>Capacity fit score</td>
+                <td>{(rec.components.capacity_fit * 100).toFixed(1)}%</td>
+              </tr>
+              <tr>
+                <td>Cold-chain match</td>
+                <td>{(rec.components.cold_chain_match * 100).toFixed(1)}%</td>
+              </tr>
+              <tr>
+                <td>Time margin score</td>
+                <td>{(rec.components.time_margin * 100).toFixed(1)}%</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <button
+        type="button"
         className="accept-btn"
         disabled={Boolean(accepting)}
+        data-accept-top={isTop ? 'true' : undefined}
         onClick={() => onAccept()}
       >
         {accepting ? 'Reserving…' : actionLabel || 'Accept reroute'}
@@ -98,8 +150,25 @@ function RankingNotes({ data }) {
     data.mode === 'single'
       ? data.recommendations[0]?.facility_id
       : data.split_plan?.stops[0]?.facility_id
+  const topRec =
+    data.mode === 'single'
+      ? data.recommendations[0]
+      : data.split_plan?.stops[0]
   const nearest = data.nearest
   const showNearest = nearest && nearest.facility_id !== topId
+  const showCounterfactual =
+    showNearest &&
+    nearest.feasible &&
+    nearest.total_score != null &&
+    nearest.components &&
+    topRec
+
+  const compLabel = {
+    proximity: 'Proximity',
+    capacity_fit: 'Capacity fit',
+    cold_chain_match: 'Cold chain',
+    time_margin: 'Time margin',
+  }
 
   return (
     <>
@@ -109,6 +178,48 @@ function RankingNotes({ data }) {
           <p>
             <strong>{nearest.facility_name}</strong> is closest at{' '}
             {nearest.distance_km.toFixed(1)} km, but {nearest.reason}.
+          </p>
+        </div>
+      )}
+
+      {showCounterfactual && (
+        <div className="counterfactual-card">
+          <span className="nearest-kicker">What if we chose the nearest?</span>
+          <div className="counterfactual-head">
+            <div>
+              <strong>{nearest.facility_name}</strong> (nearest)
+              <span className="score-total">{nearest.total_score.toFixed(3)}</span>
+            </div>
+            <div>
+              <strong>{topRec.facility_name}</strong> (top pick)
+              <span className="score-total">{topRec.total_score.toFixed(3)}</span>
+            </div>
+          </div>
+          <div className="counterfactual-rows">
+            {Object.keys(compLabel).map((key) => {
+              const nearestVal = nearest.components[key]
+              const topVal = topRec.components[key]
+              const gap = topVal - nearestVal
+              const winner = gap > 0.001 ? topRec.facility_name : gap < -0.001 ? nearest.facility_name : 'tie'
+              return (
+                <div key={key} className="counterfactual-row">
+                  <span className="counterfactual-label">{compLabel[key]}</span>
+                  <span className="counterfactual-nearest">{(
+                    nearestVal * 100
+                  ).toFixed(0)}%</span>
+                  <span className="counterfactual-top">{(
+                    topVal * 100
+                  ).toFixed(0)}%</span>
+                  <span className={`counterfactual-winner ${gap > 0.001 ? 'top' : gap < -0.001 ? 'nearest' : 'tie'}`}>
+                    {winner}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+          <p className="counterfactual-why">
+            {nearest.reason}. Accepting the top pick instead rescues the load
+            with a higher overall score.
           </p>
         </div>
       )}
@@ -125,7 +236,15 @@ function RankingNotes({ data }) {
   )
 }
 
-export default function RecommendPanel({ state, vehicle, refresh, onRerouted, notify }) {
+export default function RecommendPanel({
+  state,
+  vehicle,
+  refresh,
+  onRerouted,
+  notify,
+  onDismiss,
+  acceptTransfer,
+}) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -262,6 +381,7 @@ export default function RecommendPanel({ state, vehicle, refresh, onRerouted, no
               rank={index + 1}
               accepting={accepting}
               isNearest={rec.facility_id === data.nearest?.facility_id}
+              isTop={index === 0}
               onAccept={() => handleAccept(rec.facility_id)}
             />
           ))}
@@ -282,6 +402,7 @@ export default function RecommendPanel({ state, vehicle, refresh, onRerouted, no
               accepting={accepting}
               actionLabel="Accept split plan"
               isNearest={stop.facility_id === data.nearest?.facility_id}
+              isTop={index === 0}
               onAccept={() =>
                 handleAccept(
                   data.split_plan.stops[0].facility_id,
@@ -290,6 +411,77 @@ export default function RecommendPanel({ state, vehicle, refresh, onRerouted, no
               }
             />
           ))}
+        </div>
+      )}
+
+      {!loading && !error && data && data.mode === 'none' && (
+        <div className="blocked-panel">
+          <div className="blocked-head">
+            <span className="blocked-tag">No rescue options</span>
+            <span className="blocked-count">{formatKg(vehicle.load_kg)} load</span>
+          </div>
+          <p className="blocked-reason">{data.blocked_reason}</p>
+
+          {data.transfer_options && data.transfer_options.length > 0 && (
+            <>
+              <p className="blocked-reason" style={{ marginTop: 10 }}>
+                A nearby truck can pick up the load and deliver it:
+              </p>
+              <div className="transfer-list">
+                {data.transfer_options.map((opt) => (
+                  <div
+                    key={opt.vehicle_id}
+                    className="transfer-card"
+                  >
+                    <div className="transfer-head">
+                      <strong>{opt.vehicle_name}</strong>
+                      <span className="transfer-eta">{opt.total_eta_hours.toFixed(1)} h</span>
+                    </div>
+                    <p className="transfer-why">{opt.why}</p>
+                    <button
+                      type="button"
+                      className="accept-btn"
+                      onClick={() =>
+                        acceptTransfer(
+                          opt.vehicle_id,
+                          opt.target_facility_id,
+                        )
+                      }
+                    >
+                      Transfer load
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          <div className="blocked-actions">
+            <button
+              type="button"
+              className="link-btn"
+              onClick={() => {
+                onDismiss()
+                notify('Select a different truck to see its rescue options.', 'info')
+              }}
+            >
+              Select another truck
+            </button>
+            <button
+              type="button"
+              className="link-btn"
+              onClick={() => {
+                onDismiss()
+                notify('No facility can take this load — load may be lost.', 'error')
+              }}
+            >
+              Dismiss alert
+            </button>
+          </div>
+          <p className="blocked-hint">
+            Next steps: choose a different truck on the map, trigger a new
+            disruption, or escalate manually to the fleet manager.
+          </p>
         </div>
       )}
 

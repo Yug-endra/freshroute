@@ -7,9 +7,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import useLiveState from './hooks/useLiveState'
-import { resetDemo, triggerScenario } from './api'
+import { resetDemo, triggerScenario, acceptTransfer } from './api'
 import { formatInr } from './format'
 import MapView from './components/MapView'
+import FleetRibbon from './components/FleetRibbon'
 import DemoControls from './components/DemoControls'
 import AlertPanel from './components/AlertPanel'
 import RecommendPanel from './components/RecommendPanel'
@@ -22,13 +23,16 @@ export default function App() {
   const { state, connected, error, refresh } = useLiveState()
   const [selectedVehicleId, setSelectedVehicleId] = useState(null)
   const [focusSignal, setFocusSignal] = useState(0)
+  const [resetCounter, setResetCounter] = useState(0)
   const [toast, setToast] = useState(null)
   const toastTimer = useRef(null)
 
   const notify = useCallback((message, type = 'success') => {
     setToast({ message, type })
     clearTimeout(toastTimer.current)
-    toastTimer.current = setTimeout(() => setToast(null), 5000)
+    // Error messages stay longer so the dispatcher can read the full reason.
+    const duration = type === 'error' ? 8000 : 5000
+    toastTimer.current = setTimeout(() => setToast(null), duration)
   }, [])
 
   useEffect(() => () => clearTimeout(toastTimer.current), [])
@@ -56,6 +60,7 @@ export default function App() {
   const handleReset = async () => {
     await resetDemo()
     setSelectedVehicleId(null)
+    setResetCounter((n) => n + 1)
     await refresh()
     notify('Demo reset to the Bengaluru seed state.')
   }
@@ -71,6 +76,55 @@ export default function App() {
     )
     await refresh().catch(() => {})
   }
+
+  const handleTransfer = async (brokenVehicleId, candidateVehicleId, facilityId) => {
+    try {
+      const result = await acceptTransfer(brokenVehicleId, candidateVehicleId, facilityId)
+      notify(
+        `Load transferred: ${Math.round(result.kg_rescued)} kg via ${result.candidate_id} to ${result.facility_id}.`,
+        'success'
+      )
+      await refresh().catch(() => {})
+    } catch (err) {
+      notify(err.message, 'error')
+    }
+  }
+
+  // Keyboard shortcuts for the stage: 1/2/3 disrupt, R resets, Enter accepts the
+  // top option, Escape clears the selection. Handlers live in a ref so the
+  // listener is attached once and always calls the latest closure.
+  const shortcuts = useRef({})
+  shortcuts.current = { selectedVehicleId, handleScenario, handleReset }
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      const tag = event.target?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+      if (event.metaKey || event.ctrlKey || event.altKey) return
+
+      const key = event.key.toLowerCase()
+      const current = shortcuts.current
+      const scenarios = { 1: 'reefer_failure', 2: 'delay', 3: 'breakdown' }
+
+      if (scenarios[key]) {
+        if (current.selectedVehicleId) {
+          current.handleScenario(scenarios[key]).catch(() => {})
+        }
+        return
+      }
+      if (key === 'r') {
+        current.handleReset().catch(() => {})
+      } else if (key === 'enter') {
+        // data-accept-top is set on the primary accept button in RecommendPanel.
+        document.querySelector('[data-accept-top]')?.click()
+      } else if (key === 'escape') {
+        setSelectedVehicleId(null)
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   if (!state) {
     return (
@@ -120,14 +174,20 @@ export default function App() {
       </header>
 
       <main className="layout">
-        <section className="map-pane">
+        <div className="map-pane">
+          <FleetRibbon
+            vehicles={state.vehicles}
+            alerts={state.alerts}
+            selectedVehicleId={selectedVehicleId}
+            onSelect={focusVehicle}
+          />
           <MapView
             state={state}
             selectedVehicleId={selectedVehicleId}
             focusSignal={focusSignal}
             onSelect={setSelectedVehicleId}
           />
-        </section>
+        </div>
 
         <aside className="side-pane">
           <DemoControls
@@ -144,12 +204,12 @@ export default function App() {
             refresh={refresh}
             onRerouted={handleRerouted}
             notify={notify}
+            onDismiss={() => setSelectedVehicleId(null)}
+            acceptTransfer={handleTransfer}
           />
           <ImpactCounters impact={state.impact} rates={state.impact_rates} />
           <AnalyticsPanel
-            refreshKey={`${state.impact.events_resolved}:${
-              state.sim_minutes === 0 ? 'seed' : 'live'
-            }`}
+            refreshKey={`${state.impact.events_resolved}:${resetCounter}`}
           />
           <NotificationFeed state={state} />
           <AuditLog state={state} />

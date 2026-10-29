@@ -268,3 +268,27 @@ def test_ledger_survives_reset_and_aggregates_runs(client):
     assert reset["current_run"]["rescues"] == 0
     assert reset["all_time"]["rescues"] == after["all_time"]["rescues"]
     assert reset["runs"] == after["runs"] + 1
+
+
+def test_reroute_rejects_same_facility_for_both_split_stops(client):
+    """A split plan must use two *different* facilities — same ID twice is a 400."""
+    client.post("/simulate/delay?vehicle_id=V1")
+    response = client.post(
+        "/reroute",
+        json={"vehicle_id": "V1", "facility_id": "F1", "via_facility_id": "F1"},
+    )
+    assert response.status_code == 400
+    assert "different" in response.json()["detail"].lower()
+
+
+def test_health_exposes_sim_clock_and_alert_count(client):
+    """The /health endpoint must include sim_clock and active_alerts."""
+    body = client.get("/health").json()
+    assert "sim_clock" in body
+    assert "active_alerts" in body
+    assert body["status"] == "ok"
+
+    # After triggering an alert, active_alerts must increment.
+    client.post("/simulate/delay?vehicle_id=V1")
+    body2 = client.get("/health").json()
+    assert body2["active_alerts"] >= 1

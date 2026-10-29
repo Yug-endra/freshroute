@@ -17,6 +17,7 @@ from .models import (
     ScoreComponents,
     SplitPlan,
     SplitStop,
+    TransferOption,
     Vehicle,
 )
 
@@ -41,6 +42,10 @@ TYPE_LABEL = {
     "shelter": "food shelter",
 }
 
+# Route-length cache: avoids re-walking the polyline on every tick.
+# Keys are the tuple of coordinates so memory reuse cannot cause stale lookups.
+_route_len_cache: dict[tuple[tuple[float, float], ...], float] = {}
+
 
 def haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     """Great-circle distance in kilometres between two lat/lng points."""
@@ -56,10 +61,15 @@ def haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
 
 
 def route_length_km(points: list[list[float]]) -> float:
-    """Total length of a polyline, in kilometres."""
-    return sum(
-        haversine_km(a[0], a[1], b[0], b[1]) for a, b in zip(points, points[1:])
-    )
+    """Total length of a polyline, in kilometres (cached by waypoint coordinates)."""
+    if not points:
+        return 0.0
+    key = tuple((p[0], p[1]) for p in points)
+    if key not in _route_len_cache:
+        _route_len_cache[key] = sum(
+            haversine_km(a[0], a[1], b[0], b[1]) for a, b in zip(points, points[1:])
+        )
+    return _route_len_cache[key]
 
 
 def interpolate_position(points: list[list[float]], progress_km: float) -> list[float]:
@@ -159,10 +169,13 @@ def score_facility(vehicle: Vehicle, facility: Facility, max_distance: float) ->
     }
 
 
-def _why(vehicle: Vehicle, facility: Facility, result: dict) -> str:
+def _why(vehicle: Vehicle, facility: Facility, result: dict, allocated_kg: float | None = None) -> str:
     """Build the one-sentence explanation shown under each recommendation card."""
     label = TYPE_LABEL[facility.type]
-    used_pct = round(100 * vehicle.load_kg / facility.free_kg) if facility.free_kg else 0
+    # For a split stop, show how much of this facility's space the allocated
+    # drop uses; otherwise show the whole load against free space.
+    load = allocated_kg if allocated_kg is not None else vehicle.load_kg
+    used_pct = round(100 * load / facility.free_kg) if facility.free_kg else 0
     spare = max(0.0, result["spare_hours"])
     return (
         f"{label.capitalize()} {result['distance_km']:.1f} km away, uses {used_pct}% "
@@ -191,6 +204,7 @@ def recommend(vehicle: Vehicle, facilities: list[Facility], top_n: int = 3) -> l
                 total_score=result["total"],
                 components=ScoreComponents(**result["components"]),
                 why=_why(vehicle, facility, result),
+                spare_hours=round(max(0.0, result["spare_hours"]), 2),
             )
         )
 
@@ -216,6 +230,8 @@ def nearest_option(
 
     Judges always ask "why not the nearest one?". Returning the nearest site plus
     a one-line reason lets the UI answer that without inventing anything.
+    When the nearest IS feasible we also return its full score breakdown so the
+    UI can draw a side-by-side counterfactual without a second request.
     """
     if not facilities:
         return None
@@ -223,6 +239,9 @@ def nearest_option(
     nearest = min(facilities, key=lambda f: straight_line_km(vehicle, f))
     distance = round(straight_line_km(vehicle, nearest), 2)
     eta = round(eta_hours(vehicle, nearest), 2)
+
+    nearest_score: float | None = None
+    nearest_components: ScoreComponents | None = None
 
     if nearest.free_kg < vehicle.load_kg:
         feasible = False
@@ -236,13 +255,17 @@ def nearest_option(
         )
     else:
         feasible = True
+        # Score the nearest facility so the UI can draw the counterfactual.
+        farthest = max(straight_line_km(vehicle, f) for f in facilities) or 1.0
+        result = score_facility(vehicle, nearest, farthest)
+        nearest_score = result["total"]
+        nearest_components = ScoreComponents(**result["components"])
+
         reason = "it is feasible, but the ranked options score higher overall"
         if chosen is not None:
-            farthest = max(straight_line_km(vehicle, f) for f in facilities)
-            components = score_facility(vehicle, nearest, farthest)["components"]
             gaps = {
-                key: round(getattr(chosen.components, key, 0.0) - value, 3)
-                for key, value in components.items()
+                key: round(getattr(chosen.components, key, 0.0) - result["components"][key], 3)
+                for key in result["components"]
             }
             weakest = max(gaps, key=gaps.get)
             if gaps[weakest] > 0:
@@ -258,13 +281,36 @@ def nearest_option(
         eta_hours=eta,
         feasible=feasible,
         reason=reason,
+        total_score=nearest_score,
+        components=nearest_components,
+    )
+
+
+def onward_for(
+    vehicle: Vehicle, first: Facility, first_result: dict, remaining_kg: float
+) -> Vehicle:
+    """
+    The truck as it leaves the first stop: a smaller load, the shelf life left
+    after the first leg, and a new position. The second stop is scored and
+    explained against this state, so a two-stop plan cannot teleport.
+    """
+    return vehicle.model_copy(
+        update={
+            "position": list(first.position),
+            "load_kg": remaining_kg,
+            "shelf_life_h": max(0.0, vehicle.shelf_life_h - first_result["eta_hours"]),
+        }
     )
 
 
 def split_plan(vehicle: Vehicle, facilities: list[Facility]) -> SplitPlan | None:
     """
     Build a two-stop plan when no single facility can take the whole load.
-    The first stop is filled as much as possible, the second takes the remainder.
+
+    The truck drops part of the load at the first stop and drives on to the
+    second. The second leg is measured from the first stop, and the shelf life
+    used to score it is what is left after the first leg, so the plan cannot
+    pretend the truck teleports or that time stands still between stops.
     """
     usable = [
         f
@@ -275,7 +321,7 @@ def split_plan(vehicle: Vehicle, facilities: list[Facility]) -> SplitPlan | None
         return None
 
     farthest = max(straight_line_km(vehicle, f) for f in facilities) or 1.0
-    best: tuple[float, Facility, Facility, float, float] | None = None
+    best: tuple[float, Facility, Facility, float, float, dict, dict, Vehicle] | None = None
 
     # Try every ordered pair and keep the pair with the best combined score.
     for first in usable:
@@ -283,25 +329,41 @@ def split_plan(vehicle: Vehicle, facilities: list[Facility]) -> SplitPlan | None
         remaining = vehicle.load_kg - first_kg
         if remaining <= 0:
             continue
+        first_result = score_facility(vehicle, first, farthest)
+
+        # What the truck looks like when it leaves the first stop: same cargo
+        # minus the drop, less shelf life, and standing at the first facility.
+        onward = onward_for(vehicle, first, first_result, remaining)
+
         for second in usable:
             if second.id == first.id or second.free_kg < remaining:
                 continue
-            first_result = score_facility(vehicle, first, farthest)
-            second_result = score_facility(
-                vehicle.model_copy(update={"load_kg": remaining}), second, farthest
-            )
+            second_result = score_facility(onward, second, farthest)
+            # Cargo must still be edible when the truck reaches stop two.
+            if second_result["eta_hours"] >= onward.shelf_life_h:
+                continue
             combined = first_result["total"] + second_result["total"]
             if best is None or combined > best[0]:
-                best = (combined, first, second, first_kg, remaining)
+                best = (
+                    combined,
+                    first,
+                    second,
+                    first_kg,
+                    remaining,
+                    first_result,
+                    second_result,
+                    onward,
+                )
 
     if best is None:
         return None
 
-    _, first, second, first_kg, second_kg = best
+    _, first, second, first_kg, second_kg, first_result, second_result, onward = best
     stops: list[SplitStop] = []
-    for facility, kg in ((first, first_kg), (second, second_kg)):
-        part = vehicle.model_copy(update={"load_kg": kg})
-        result = score_facility(part, facility, farthest)
+    for facility, kg, result, scored_for in (
+        (first, first_kg, first_result, vehicle),
+        (second, second_kg, second_result, onward),
+    ):
         stops.append(
             SplitStop(
                 facility_id=facility.id,
@@ -311,7 +373,7 @@ def split_plan(vehicle: Vehicle, facilities: list[Facility]) -> SplitPlan | None
                 eta_hours=result["eta_hours"],
                 total_score=result["total"],
                 components=ScoreComponents(**result["components"]),
-                why=_why(part, facility, result),
+                why=_why(scored_for, facility, result, allocated_kg=kg),
                 kg_allocated=round(kg, 1),
             )
         )
@@ -336,3 +398,77 @@ def build_rescue_route(start: list[float], destinations: list[list[float]]) -> l
         points.append(list(target))
         origin = target
     return points
+
+
+def transfer_options(
+    broken_vehicle: Vehicle,
+    all_vehicles: list[Vehicle],
+    facilities: list[Facility],
+    max_transfer_distance_km: float = 100.0,
+) -> list[TransferOption]:
+    """
+    Find healthy trucks that can rescue the broken truck's load by driving to
+    its location, picking up the cargo, and delivering it to the nearest
+    feasible facility.
+
+    Returns a list of TransferOption, ranked by total ETA (fastest first).
+    A candidate truck must:
+      - Be in OK status (healthy, not itself at risk or rerouted)
+      - Not be the broken truck
+      - Be within max_transfer_distance_km of the broken truck
+    For each candidate, the nearest facility reachable from the broken truck's
+    position within the cargo's remaining shelf life is chosen as the drop-off.
+    """
+    options: list[TransferOption] = []
+
+    for candidate in all_vehicles:
+        if candidate.id == broken_vehicle.id:
+            continue
+        if candidate.status != "OK":
+            continue
+
+        distance_to_broken = straight_line_km(candidate, broken_vehicle)
+        if distance_to_broken > max_transfer_distance_km:
+            continue
+
+        # The candidate picks up the load at the broken truck's position, so
+        # the delivery leg starts from the broken truck's position.
+        proxy = broken_vehicle.model_copy(update={"position": list(broken_vehicle.position)})
+
+        ranked = recommend(proxy, facilities, top_n=1)
+        if not ranked:
+            continue
+
+        best = ranked[0]
+        distance_to_facility = best.distance_km
+        total_eta = round(
+            distance_to_broken / candidate.speed_kmph + best.eta_hours, 2
+        )
+
+        shelf_ok = total_eta < broken_vehicle.shelf_life_h
+        if not shelf_ok:
+            continue
+
+        why = (
+            f"{candidate.name} is {distance_to_broken:.1f} km away, can reach "
+            f"{best.facility_name} ({best.facility_type}) in {best.eta_hours:.1f} h "
+            f"after pickup — total {total_eta:.1f} h."
+        )
+
+        options.append(
+            TransferOption(
+                vehicle_id=candidate.id,
+                vehicle_name=candidate.name,
+                distance_to_broken_km=round(distance_to_broken, 2),
+                load_kg=round(broken_vehicle.load_kg, 1),
+                target_facility_id=best.facility_id,
+                target_facility_name=best.facility_name,
+                distance_to_facility_km=distance_to_facility,
+                total_eta_hours=total_eta,
+                why=why,
+            )
+        )
+
+    options.sort(key=lambda o: o.total_eta_hours)
+    return options
+

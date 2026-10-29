@@ -78,6 +78,29 @@ export default function AnalyticsPanel({ refreshKey }) {
             )}
           </p>
 
+          {data.runs_history && data.runs_history.length > 0 && (
+            <>
+              <p className="ledger-line" style={{ marginTop: 10 }}>
+                Run history (SQLite survives reset)
+              </p>
+              <ol className="ledger-list run-history">
+                {data.runs_history.map((run) => (
+                  <li key={run.run_id} className={run.is_current ? 'current' : ''}>
+                    <span className="ledger-time">{run.started_at.slice(11, 16)}</span>
+                    <span className="ledger-vehicle">Run #{run.run_id}</span>
+                    <span className="ledger-kg">{formatKg(run.kg_rescued)}</span>
+                    <span className="ledger-to">
+                      {run.rescues} rescue{run.rescues === 1 ? '' : 's'}{' '}
+                      {run.is_current && (
+                        <span style={{ color: 'var(--green)' }}> · current</span>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </>
+          )}
+
           {recent.length > 0 && (
             <ol className="ledger-list">
               {recent.map((rescue, index) => (

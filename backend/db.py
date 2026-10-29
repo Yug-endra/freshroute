@@ -55,7 +55,8 @@ CREATE TABLE IF NOT EXISTS rescues (
     co2e_kg REAL NOT NULL,
     facility_ids TEXT NOT NULL DEFAULT '',
     facility_names TEXT NOT NULL DEFAULT '',
-    facility_types TEXT NOT NULL DEFAULT ''
+    facility_types TEXT NOT NULL DEFAULT '',
+    facility_kg TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_audit_run ON audit_events(run_id);
@@ -82,6 +83,13 @@ def _connect() -> sqlite3.Connection:
             connection = sqlite3.connect(str(DB_PATH), check_same_thread=False)
             connection.row_factory = sqlite3.Row
             connection.executescript(SCHEMA)
+            # Older demo ledgers predate per-stop kilograms. Add the column in
+            # place so an existing history keeps working after the upgrade.
+            columns = {row["name"] for row in connection.execute("PRAGMA table_info(rescues)")}
+            if "facility_kg" not in columns:
+                connection.execute(
+                    "ALTER TABLE rescues ADD COLUMN facility_kg TEXT NOT NULL DEFAULT ''"
+                )
             connection.commit()
             _connection = connection
         return _connection
@@ -176,6 +184,7 @@ def log_rescue(
     facility_ids: list[str],
     facility_names: list[str],
     facility_types: list[str],
+    facility_kg: list[float] | None = None,
 ) -> None:
     """Persist one accepted reroute so impact survives a reset or a restart."""
     _guard(
@@ -191,6 +200,7 @@ def log_rescue(
         facility_ids,
         facility_names,
         facility_types,
+        facility_kg or [],
     )
 
 
@@ -206,6 +216,7 @@ def _log_rescue(
     facility_ids: list[str],
     facility_names: list[str],
     facility_types: list[str],
+    facility_kg: list[float],
 ) -> None:
     run = run_id or _current_run_id()
     connection = _connect()
@@ -214,8 +225,8 @@ def _log_rescue(
             """
             INSERT INTO rescues
                 (run_id, timestamp, sim_clock, vehicle_id, kg, meals, value_inr,
-                 co2e_kg, facility_ids, facility_names, facility_types)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 co2e_kg, facility_ids, facility_names, facility_types, facility_kg)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run,
@@ -229,12 +240,21 @@ def _log_rescue(
                 ",".join(facility_ids),
                 ",".join(facility_names),
                 ",".join(facility_types),
+                ",".join(f"{float(stop_kg):.1f}" for stop_kg in facility_kg),
             ),
         )
 
 
 def _split_types(value: str) -> list[str]:
     return [part for part in (value or "").split(",") if part]
+
+
+def _split_kg(value: str) -> list[float]:
+    """Per-stop kilograms stored as a comma-separated string, newest schema."""
+    try:
+        return [float(part) for part in (value or "").split(",") if part]
+    except ValueError:
+        return []
 
 
 def analytics(recent_limit: int = 5) -> dict:
@@ -281,24 +301,57 @@ def _analytics(recent_limit: int) -> dict:
         ).fetchall()
 
         all_rows = connection.execute(
-            "SELECT kg, facility_names, facility_types FROM rescues"
+            "SELECT kg, facility_names, facility_types, facility_kg FROM rescues"
+        ).fetchall()
+
+        run_rows = connection.execute(
+            """
+            SELECT r.id, r.started_at, r.label,
+                   COALESCE(SUM(s.kg), 0) AS kg,
+                   COUNT(s.id) AS rescues
+            FROM runs r
+            LEFT JOIN rescues s ON s.run_id = r.id
+            GROUP BY r.id
+            ORDER BY r.id DESC
+            LIMIT 12
+            """
         ).fetchall()
 
     by_type: dict[str, dict] = {}
     by_facility: dict[str, dict] = {}
     for row in all_rows:
-        kg = float(row["kg"] or 0)
-        for facility_type in _split_types(row["facility_types"]):
+        names = _split_types(row["facility_names"])
+        types = _split_types(row["facility_types"])
+        stop_kgs = _split_kg(row["facility_kg"])
+        # Ledgers written before per-stop kilograms existed stored only the
+        # total; fall back to it so old history still aggregates.
+        if len(stop_kgs) != len(names):
+            stop_kgs = [float(row["kg"] or 0)] * len(names)
+
+        for facility_type, stop_kg in zip(types, stop_kgs):
             bucket = by_type.setdefault(facility_type, {"type": facility_type, "rescues": 0, "kg": 0.0})
             bucket["rescues"] += 1
-            bucket["kg"] = round(bucket["kg"] + kg, 1)
-        for name in _split_types(row["facility_names"]):
+            bucket["kg"] = round(bucket["kg"] + stop_kg, 1)
+        for name, stop_kg in zip(names, stop_kgs):
             bucket = by_facility.setdefault(name, {"name": name, "rescues": 0, "kg": 0.0})
             bucket["rescues"] += 1
-            bucket["kg"] = round(bucket["kg"] + kg, 1)
+            bucket["kg"] = round(bucket["kg"] + stop_kg, 1)
+
+    history = [
+        {
+            "run_id": int(row["id"]),
+            "started_at": row["started_at"],
+            "label": row["label"],
+            "kg_rescued": round(float(row["kg"]), 1),
+            "rescues": int(row["rescues"]),
+            "is_current": int(row["id"]) == current_id,
+        }
+        for row in reversed(run_rows)
+    ]
 
     return {
         "runs": int(run_count),
+        "runs_history": history,
         "current_run": {
             "id": current_id,
             "rescues": int(current["rescues"]),

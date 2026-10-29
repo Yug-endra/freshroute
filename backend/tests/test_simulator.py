@@ -13,6 +13,41 @@ from __future__ import annotations
 import pytest
 
 from backend import matcher, risk, simulator, state
+from backend.models import Facility, Vehicle
+
+
+def make_vehicle(**overrides) -> Vehicle:
+    base = dict(
+        id="VX",
+        name="Test Truck",
+        produce="tomato",
+        produce_class="fast",
+        load_kg=1000,
+        temp_c=5.0,
+        shelf_life_h=10.0,
+        speed_kmph=40.0,
+        cruise_kmph=40.0,
+        route_id="R1",
+        destination_id="F1",
+        position=[12.97, 77.59],
+        status="OK",
+        baseline_temp_c=5.0,
+    )
+    base.update(overrides)
+    return Vehicle(**base)
+
+
+def make_facility(fid: str, ftype: str, lat: float, lng: float, free_kg: float) -> Facility:
+    return Facility(
+        id=fid,
+        name=f"Facility {fid}",
+        type=ftype,
+        position=[lat, lng],
+        capacity_kg=free_kg * 2,
+        free_kg=free_kg,
+        contact="test",
+    )
+
 
 SEED_SHELF_V1 = 9.0
 
@@ -149,3 +184,54 @@ def test_reset_restores_the_exact_seed_state():
         "value_inr": 0,
         "co2e_kg_avoided": 0,
     }
+
+
+def test_delay_trigger_is_idempotent():
+    """Calling trigger_delay twice must not double-penalise shelf life or slow the truck further."""
+    vehicle = state.vehicles["V5"]
+    before_shelf = vehicle.shelf_life_h
+    before_speed = vehicle.speed_kmph
+
+    simulator.trigger_delay("V5")
+    after_first_shelf = vehicle.shelf_life_h
+    after_first_speed = vehicle.speed_kmph
+
+    simulator.trigger_delay("V5")  # second call must be a no-op
+
+    assert vehicle.shelf_life_h == pytest.approx(after_first_shelf, abs=0.001), (
+        "Second trigger_delay must not subtract the penalty a second time"
+    )
+    assert vehicle.speed_kmph == pytest.approx(after_first_speed, abs=0.001), (
+        "Second trigger_delay must not slow the truck further"
+    )
+    # Sanity: the first call DID change things
+    assert after_first_shelf < before_shelf
+    assert after_first_speed < before_speed
+
+
+def test_split_plan_rejects_second_leg_when_shelf_life_expires_en_route():
+    """
+    If getting to stop 1 burns all the shelf life, stop 2 must be rejected even
+    though it is spatially reachable, because the cargo would not survive the
+    onward leg.
+    """
+    # Place the truck 60 km from stop 1 at 40 km/h → 1.5 h ETA to stop 1.
+    # Shelf life is 1.6 h, so after stop 1 only 0.1 h remains.
+    # Stop 2 is 20 km from stop 1 → 0.5 h ETA from there → infeasible.
+    vehicle = make_vehicle(
+        load_kg=2000,
+        shelf_life_h=1.6,
+        speed_kmph=40.0,
+        cruise_kmph=40.0,
+        position=[12.97, 77.59],
+    )
+    # Stop 1: ~60 km NE (≈ 0.54° lat), can take 1200 kg
+    stop1 = make_facility("S1", "kitchen", 13.51, 77.59, free_kg=1200)
+    # Stop 2: ~20 km north of stop 1, can take 800 kg
+    stop2 = make_facility("S2", "kitchen", 13.69, 77.59, free_kg=800)
+
+    # The single-facility path fails (neither fits 2000 kg alone).
+    assert matcher.recommend(vehicle, [stop1, stop2]) == []
+    # The two-stop plan must also fail because the second leg is undeliverable.
+    plan = matcher.split_plan(vehicle, [stop1, stop2])
+    assert plan is None, "split_plan must reject a pair where cargo expires before stop 2"
