@@ -146,10 +146,7 @@ export default function App() {
     )
   }
 
-  const activeAlertCount = useMemo(
-    () => state.alerts.filter((alert) => !alert.resolved).length,
-    [state.alerts],
-  )
+  const activeAlertCount = state.alerts.filter((alert) => !alert.resolved).length
 
   return (
     <div className="app">
