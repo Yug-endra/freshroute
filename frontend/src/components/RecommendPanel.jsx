@@ -443,6 +443,7 @@ export default function RecommendPanel({
                       className="accept-btn"
                       onClick={() =>
                         acceptTransfer(
+                          vehicle.id,
                           opt.vehicle_id,
                           opt.target_facility_id,
                         )
