@@ -408,7 +408,7 @@ async def reroute(body: RerouteRequest):
 
     # Redraw the route through the receiving facility (or both, for a split load).
     destinations = [target.position for target, _kg in allocations]
-    vehicle.new_route = matcher.build_rescue_route(vehicle.position, destinations)
+    vehicle.new_route = await matcher.build_rescue_route_async(vehicle.position, destinations)
     vehicle.reroute_stops = [target.id for target, _kg in allocations]
     vehicle.destination_id = allocations[-1][0].id  # the route ends at the last stop
     vehicle.rerouted_to = facility.id

@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import math
 
+import httpx
+
 from .models import (
     Facility,
     NearestOption,
@@ -45,6 +47,10 @@ TYPE_LABEL = {
 # Route-length cache: avoids re-walking the polyline on every tick.
 # Keys are the tuple of coordinates so memory reuse cannot cause stale lookups.
 _route_len_cache: dict[tuple[tuple[float, float], ...], float] = {}
+
+# Cache for OSRM road polylines keyed on (start_tuple, end_tuple).
+# Avoids a network round-trip when the dispatcher re-opens the reroute panel.
+_osrm_cache: dict[tuple, list[list[float]]] = {}
 
 
 def haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
@@ -398,6 +404,78 @@ def build_rescue_route(start: list[float], destinations: list[list[float]]) -> l
         points.append(list(target))
         origin = target
     return points
+
+
+async def build_rescue_route_async(
+    start: list[float],
+    destinations: list[list[float]],
+) -> list[list[float]]:
+    """
+    Fetch real road polylines from the OSRM public demo server
+    (http://router.project-osrm.org) for each leg of the rescue route.
+
+    - OSRM returns coordinates as [lng, lat]; these are flipped to [lat, lng]
+      for Leaflet before being stored.
+    - A module-level dict `_osrm_cache` keyed on (start_tuple, end_tuple) avoids
+      repeated network calls for the same leg within a session.
+    - Any leg that fails (timeout, non-200, code != "Ok", or network error) falls
+      back to `build_rescue_route` for that leg so the UI always gets a polyline.
+    - Timeout per HTTP request: 3 seconds.
+
+    For a two-destination split plan the two legs are stitched together; the
+    duplicate junction point (last point of leg 1 == first point of leg 2) is
+    removed before joining so the polyline has no repeated node.
+    """
+    OSRM_BASE = "http://router.project-osrm.org/route/v1/driving"
+    TIMEOUT_S = 3.0
+
+    async def _fetch_leg(leg_start: list[float], leg_end: list[float]) -> list[list[float]]:
+        """Return [lat, lng] points for one leg, using cache or OSRM, or the bow fallback."""
+        cache_key = (
+            (leg_start[0], leg_start[1]),
+            (leg_end[0], leg_end[1]),
+        )
+        if cache_key in _osrm_cache:
+            return _osrm_cache[cache_key]
+
+        # OSRM expects coordinates in {lng},{lat} order.
+        coords = f"{leg_start[1]},{leg_start[0]};{leg_end[1]},{leg_end[0]}"
+        url = f"{OSRM_BASE}/{coords}?overview=full&geometries=geojson"
+
+        try:
+            async with httpx.AsyncClient(timeout=TIMEOUT_S) as client:
+                resp = await client.get(url)
+            if resp.status_code != 200:
+                raise ValueError(f"HTTP {resp.status_code}")
+            data = resp.json()
+            if data.get("code") != "Ok":
+                raise ValueError(f"OSRM code={data.get('code')}")
+            # OSRM geometry is [[lng, lat], ...]; flip to [[lat, lng]] for Leaflet.
+            raw = data["routes"][0]["geometry"]["coordinates"]
+            leg_points = [[pt[1], pt[0]] for pt in raw]
+        except Exception:
+            # Network failure, timeout, or unexpected response — use the bow fallback.
+            leg_points = build_rescue_route(leg_start, [leg_end])
+
+        _osrm_cache[cache_key] = leg_points
+        return leg_points
+
+    if not destinations:
+        return [list(start)]
+
+    # Build the full route leg by leg, stitching without duplicate junction nodes.
+    full_route: list[list[float]] = []
+    leg_start = start
+    for leg_end in destinations:
+        leg = await _fetch_leg(leg_start, leg_end)
+        if full_route:
+            # Remove the first point of this leg — it duplicates the last point
+            # of the previous leg (the junction facility).
+            leg = leg[1:]
+        full_route.extend(leg)
+        leg_start = leg_end
+
+    return full_route
 
 
 def transfer_options(

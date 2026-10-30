@@ -24,4 +24,9 @@ export default defineConfig({
       '/events': { target: BACKEND, ws: true },
     },
   },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./src/test/setup.js'],
+  },
 })

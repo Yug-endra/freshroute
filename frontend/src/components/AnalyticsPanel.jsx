@@ -14,11 +14,13 @@ import { formatInr, formatKg, formatNumber } from '../format'
 export default function AnalyticsPanel({ refreshKey }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
+  const [loading, setLoading] = useState(true)
 
   // Refetch after each accepted reroute and after a reset. The ledger is small,
   // so one request per change is cheap; ticks never trigger a query.
   useEffect(() => {
     let cancelled = false
+    setLoading(true)
     fetchAnalytics()
       .then((next) => {
         if (!cancelled) {
@@ -28,6 +30,9 @@ export default function AnalyticsPanel({ refreshKey }) {
       })
       .catch((err) => {
         if (!cancelled) setError(err.message)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
       })
     return () => {
       cancelled = true
@@ -45,11 +50,15 @@ export default function AnalyticsPanel({ refreshKey }) {
         <span className="impact-note">SQLite · all runs</span>
       </div>
 
-      {error && <p className="empty-state">Ledger unavailable — live demo unaffected.</p>}
+      {loading && (
+        <div className="loading-inline">
+          <span className="spinner" /> Loading impact ledger…
+        </div>
+      )}
 
-      {!data && !error && <p className="empty-state">Loading saved history…</p>}
+      {error && !loading && <p className="empty-state">Ledger unavailable — live demo unaffected.</p>}
 
-      {data && (
+      {!loading && data && (
         <>
           <div className="ledger-totals">
             <div>
